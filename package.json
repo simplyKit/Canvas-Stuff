@@ -1,0 +1,23 @@
+{
+  "name": "canvas_grade_thing",
+  "description": "Random project to utilize the Canvas API.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Raven",
+    "email": "simplykatt@nirmini.dev",
+    "url": "https://github.com/thatwest7014"
+  },
+  "homepage": "https://github.com/thatwest7014/canvas_thing",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "node ./index.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.1"
+  }
+}
