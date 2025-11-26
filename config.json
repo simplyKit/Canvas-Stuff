@@ -1,6 +1,7 @@
 {
     "grading_term":"Term 2",
     "name_all_results": false,
+    "debugging_mode": true,
     "scale":[
         {
             "minpercent":97,

@@ -64,13 +64,14 @@ async function getGrades(canvasToken) {
     const gradingTerm = config.grading_term || 'Term 2';
 
     for (const course of courses) {
-        const gradingPeriodsResponse = await fetch(
+        const gradingPeriodsResponse = await fetch( // Get grading periods for each course
             `https://${canvasDomain}/api/v1/courses/${course.id}/grading_periods`,
             { headers }
         );
         const gradingPeriodsJSON = await gradingPeriodsResponse.json();
         const allGradingPeriods = gradingPeriodsJSON.grading_periods;
 
+        // Sort grading periods based off time and name even though it only shows grading periods from this year.
         let mostRecentTerm = null;
         if (Array.isArray(allGradingPeriods)) {
             const termGradingPeriods = allGradingPeriods.filter(gp => gp.title === gradingTerm);
@@ -82,6 +83,7 @@ async function getGrades(canvasToken) {
             }
         }
 
+        // Ensure that we're not trying to get data that doesn't exist. Thaat would suck lol.
         if (mostRecentTerm) {
             const gradingPeriodParam = `&grading_period_id=${mostRecentTerm.id}`;
 
@@ -101,8 +103,8 @@ async function getGrades(canvasToken) {
                     studentId: userId,
                     courseName: course.name,
                     courseId: course.id,
-                    currentScore: grade.current_score+"%",
-                    currentGrade: letterGrade,
+                    currentScore: grade.current_score+"%", // Too lazy to add the percentage elsewhere.
+                    currentGrade: letterGrade, 
                     lastActivity: enrollment.last_activity_at,
                 });
             }
