@@ -70,6 +70,7 @@ async function getGrades(canvasToken) {
         );
         const gradingPeriodsJSON = await gradingPeriodsResponse.json();
         const allGradingPeriods = gradingPeriodsJSON.grading_periods;
+        if (config.debugging_mode) console.log(allGradingPeriods)
 
         // Sort grading periods based off time and name even though it only shows grading periods from this year.
         let mostRecentTerm = null;
@@ -80,6 +81,7 @@ async function getGrades(canvasToken) {
                 termGradingPeriods.sort((a, b) => new Date(b.end_date) - new Date(a.end_date));
                 mostRecentTerm = termGradingPeriods[0];
                 console.log(`Fetching & Processing Year Data for ${mostRecentTerm.title}`)
+                if (config.debugging_mode) console.log(mostRecentTerm)
             }
         }
 
