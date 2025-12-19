@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Student Grades</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <h1>Student Grades</h1>
+  <label for="student-select">Select a student:</label>
+  <select id="student-select"></select>
+  <canvas id="grades-chart"></canvas>
+
+  <script>
+    const studentSelect = document.getElementById('student-select');
+    const gradesChartCanvas = document.getElementById('grades-chart');
+    let gradesChart;
+
+    fetch('./grades.json')
+      .then(response => response.json())
+      .then(data => {
+        const students = Object.keys(data);
+        students.forEach(student => {
+          const option = document.createElement('option');
+          option.value = student;
+          option.textContent = student;
+          studentSelect.appendChild(option);
+        });
+
+        studentSelect.addEventListener('change', () => {
+          const selectedStudent = studentSelect.value;
+          const studentData = data[selectedStudent];
+          updateChart(studentData);
+        });
+
+        // Load the first student's data by default
+        if (students.length > 0) {
+          const defaultStudent = students[0];
+          studentSelect.value = defaultStudent;
+          updateChart(data[defaultStudent]);
+        }
+      });
+
+    function updateChart(studentData) {
+      if (gradesChart) {
+        gradesChart.destroy();
+      }
+
+      const timestamps = studentData.map(entry => new Date(entry.timestamp).toLocaleString());
+      const courses = studentData[0].grades.map(grade => grade.courseId);
+
+      const datasets = courses.map(courseId => {
+        const data = studentData.map(entry => {
+          const gradeEntry = entry.grades.find(grade => grade.courseId === courseId);
+          return gradeEntry ? gradeEntry.grade : null;
+        });
+
+        return {
+          label: `Course ${courseId}`,
+          data: data,
+          fill: false,
+          borderColor: getRandomColor(),
+        };
+      });
+
+      gradesChart = new Chart(gradesChartCanvas, {
+        type: 'line',
+        data: {
+          labels: timestamps,
+          datasets: datasets,
+        },
+        options: {
+          scales: {
+            y: {
+              beginAtZero: true,
+              max: 100,
+            }
+          }
+        }
+      });
+    }
+
+    function getRandomColor() {
+      const letters = '0123456789ABCDEF';
+      let color = '#';
+      for (let i = 0; i < 6; i++) {
+        color += letters[Math.floor(Math.random() * 16)];
+      }
+      return color;
+    }
+  </script>
+</body>
+</html>

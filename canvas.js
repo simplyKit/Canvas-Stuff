@@ -1,4 +1,5 @@
 const config = require('./config.json');
+const {addData} = require('./Database');
 
 let fetch;
 try {
@@ -19,6 +20,12 @@ function getLetterGrade(score) {
         if (s >= Number(tier.minpercent)) return tier.lettergrade;
     }
     return 'N/A';
+}
+
+function parseDateSafe(d) {
+  if (!d) return null;
+  const dt = new Date(d);
+  return Number.isNaN(dt.getTime()) ? null : dt;
 }
 
 async function getGrades(canvasToken) {
@@ -61,7 +68,8 @@ async function getGrades(canvasToken) {
 
     console.log("Getting Data..");
 
-    const gradingTerm = config.grading_term || 'Term 2';
+    const configuredGradingTerm = config.grading_term || 'Term 2';
+    let overrideTermTitle = null; // If we detect an active term by date, this will be set and will override config
 
     for (const course of courses) {
         const gradingPeriodsResponse = await fetch( // Get grading periods for each course
@@ -72,20 +80,105 @@ async function getGrades(canvasToken) {
         const allGradingPeriods = gradingPeriodsJSON.grading_periods;
         if (config.debugging_mode) console.log(allGradingPeriods)
 
-        // Sort grading periods based off time and name even though it only shows grading periods from this year.
-        let mostRecentTerm = null;
-        if (Array.isArray(allGradingPeriods)) {
-            const termGradingPeriods = allGradingPeriods.filter(gp => gp.title === gradingTerm);
-            if (termGradingPeriods.length > 0) {
-                // Sort by end_date in descending order to get the most recent one first
-                termGradingPeriods.sort((a, b) => new Date(b.end_date) - new Date(a.end_date));
-                mostRecentTerm = termGradingPeriods[0];
-                console.log(`Fetching & Processing Year Data for ${mostRecentTerm.title}`)
-                if (config.debugging_mode) console.log(mostRecentTerm)
+        // If we don't yet have an override term title, try to detect any active term by date among all grading periods.
+        if (!overrideTermTitle && Array.isArray(allGradingPeriods) && allGradingPeriods.length > 0) {
+            const now = new Date();
+            const activeAny = allGradingPeriods.filter(tp => {
+                const start = parseDateSafe(tp.start_date);
+                const end = parseDateSafe(tp.end_date);
+                const started = !start || start <= now;
+                const notEnded = !end || end >= now;
+                return started && notEnded;
+            });
+
+            if (activeAny.length > 0) {
+                // Pick the newest active grading period by most recent start_date, then end_date.
+                activeAny.sort((a, b) => {
+                    const aStart = parseDateSafe(a.start_date);
+                    const bStart = parseDateSafe(b.start_date);
+                    const aStartTs = aStart ? aStart.getTime() : 0;
+                    const bStartTs = bStart ? bStart.getTime() : 0;
+                    if (bStartTs !== aStartTs) return bStartTs - aStartTs;
+                    const aEnd = parseDateSafe(a.end_date);
+                    const bEnd = parseDateSafe(b.end_date);
+                    const aEndTs = aEnd ? aEnd.getTime() : 0;
+                    const bEndTs = bEnd ? bEnd.getTime() : 0;
+                    return bEndTs - aEndTs;
+                });
+
+                overrideTermTitle = activeAny[0].title;
+                console.log(`Date-based override detected. Using grading term: "${overrideTermTitle}" instead of configured "${configuredGradingTerm}".`);
+                if (config.debugging_mode) console.log("Detected active grading period (used to set override):", activeAny[0]);
             }
         }
 
-        // Ensure that we're not trying to get data that doesn't exist. Thaat would suck lol.
+        // Use the override term title if present; otherwise use the configured grading term.
+        const gradingTermToUse = overrideTermTitle || configuredGradingTerm;
+
+        // Determine the most appropriate grading period for this course based on gradingTermToUse.
+        let mostRecentTerm = null;
+        if (Array.isArray(allGradingPeriods)) {
+            const termGradingPeriods = allGradingPeriods.filter(gp => gp.title === gradingTermToUse);
+            if (termGradingPeriods.length > 0) {
+                const now = new Date();
+
+                // Find grading periods that are "active" right now (relative to this specific term title)
+                const activeTerms = termGradingPeriods.filter(tp => {
+                    const start = parseDateSafe(tp.start_date);
+                    const end = parseDateSafe(tp.end_date);
+                    const started = !start || start <= now;
+                    const notEnded = !end || end >= now;
+                    return started && notEnded;
+                });
+
+                if (activeTerms.length > 0) {
+                    // If multiple overlapping grading periods exist, pick the newest one by start_date then end_date.
+                    activeTerms.sort((a, b) => {
+                        const aStart = parseDateSafe(a.start_date);
+                        const bStart = parseDateSafe(b.start_date);
+                        const aStartTs = aStart ? aStart.getTime() : 0;
+                        const bStartTs = bStart ? bStart.getTime() : 0;
+                        if (bStartTs !== aStartTs) return bStartTs - aStartTs;
+                        const aEnd = parseDateSafe(a.end_date);
+                        const bEnd = parseDateSafe(b.end_date);
+                        const aEndTs = aEnd ? aEnd.getTime() : 0;
+                        const bEndTs = bEnd ? bEnd.getTime() : 0;
+                        return bEndTs - aEndTs;
+                    });
+                    mostRecentTerm = activeTerms[0];
+                    if (config.debugging_mode) console.log("Selected active term by date for course:", mostRecentTerm);
+                    console.log(`Fetching & Processing Year Data for ${mostRecentTerm.title} (date-prioritized)`);
+                } else {
+                    // No active term found by date for this title. Fall back:
+                    if (config.grading_period_name_sort) {
+                        termGradingPeriods.sort((a, b) => {
+                            return (a.title || '').localeCompare(b.title || '');
+                        });
+                        mostRecentTerm = termGradingPeriods[0];
+                        if (config.debugging_mode) console.log("Fell back to name-sorting for course, selected:", mostRecentTerm);
+                        console.log(`Fetching & Processing Year Data for ${mostRecentTerm.title} (name-fallback)`);
+                    } else {
+                        // Previous behavior: sort by end_date descending (most recent end_date first)
+                        termGradingPeriods.sort((a, b) => {
+                            const aEnd = parseDateSafe(a.end_date);
+                            const bEnd = parseDateSafe(b.end_date);
+                            const aEndTs = aEnd ? aEnd.getTime() : 0;
+                            const bEndTs = bEnd ? bEnd.getTime() : 0;
+                            return bEndTs - aEndTs;
+                        });
+                        mostRecentTerm = termGradingPeriods[0];
+                        if (config.debugging_mode) console.log("Fell back to end-date sorting for course, selected:", mostRecentTerm);
+                        console.log(`Fetching & Processing Year Data for ${mostRecentTerm.title} (end-date-fallback)`);
+                    }
+                }
+            } else {
+                if (config.debugging_mode) {
+                    console.log(`No grading periods found for course ${course.id} with title "${gradingTermToUse}".`);
+                }
+            }
+        }
+
+        // Ensure that we're not trying to get data that doesn't exist.
         if (mostRecentTerm) {
             const gradingPeriodParam = `&grading_period_id=${mostRecentTerm.id}`;
 
@@ -113,6 +206,12 @@ async function getGrades(canvasToken) {
         }
     }
 
+    const studentName = profile.name;
+
+    await addData(studentName, {
+        timestamp: new Date().toISOString(),
+        grades: gradesData,
+      });
 
     return gradesData;
   } catch (error) {
